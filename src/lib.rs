@@ -2,10 +2,8 @@ extern crate cgmath;
 #[macro_use]
 extern crate glium;
 extern crate image;
-extern crate libc;
 #[macro_use]
 extern crate log;
-extern crate mint;
 
 pub mod config;
 mod fxaa;
@@ -18,10 +16,9 @@ use glium::glutin::dpi::PhysicalSize;
 use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 use glium::{glutin, CapabilitiesSource, Surface};
 use image::{ImageEncoder, ImageFormat};
-use libc::c_char;
 use mesh::Mesh;
 use std::error::Error;
-use std::ffi::CStr;
+use std::ffi::{c_char, CStr};
 use std::{io, panic, slice, thread, time};
 
 #[cfg(target_os = "linux")]
