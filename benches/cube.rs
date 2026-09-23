@@ -30,8 +30,8 @@ fn cube_obj() {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("cube stl", |b| b.iter(|| cube()));
-    c.bench_function("cube obj", |b| b.iter(|| cube_obj()));
+    c.bench_function("cube stl", |b| b.iter(cube));
+    c.bench_function("cube obj", |b| b.iter(cube_obj));
 }
 
 criterion_group! {

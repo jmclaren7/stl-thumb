@@ -15,8 +15,8 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/cache@v3
+    - uses: actions/checkout@v7
+    - uses: actions/cache@v6
       with:
         path: |
           ~/.cargo/bin/
@@ -29,6 +29,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libosmesa6-dev
+    - name: Check formatting
+      run: cargo fmt --check
     - name: Build
       run: |
         cargo build --release --verbose
@@ -44,8 +46,8 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf, aarch64-unknown-linux-gnu]
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/cache@v3
+    - uses: actions/checkout@v7
+    - uses: actions/cache@v6
       with:
         path: |
           ~/.cargo/bin/
@@ -81,7 +83,7 @@ jobs:
       run: |
         cargo build --release
         cargo generate-rpm --target-dir ./target --target ${{ matrix.target }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: deb-rpm-${{ matrix.target }}
         path: |

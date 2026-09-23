@@ -18,7 +18,7 @@ fn shipwreck() {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("shipwreck", |b| b.iter(|| shipwreck()));
+    c.bench_function("shipwreck", |b| b.iter(shipwreck));
 }
 
 criterion_group!(benches, criterion_benchmark);

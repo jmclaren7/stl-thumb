@@ -30,8 +30,8 @@ fn benchy_obj() {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("benchy_stl", |b| b.iter(|| benchy_stl()));
-    c.bench_function("benchy_obj", |b| b.iter(|| benchy_obj()));
+    c.bench_function("benchy_stl", |b| b.iter(benchy_stl));
+    c.bench_function("benchy_obj", |b| b.iter(benchy_obj));
 }
 
 criterion_group!(benches, criterion_benchmark);
