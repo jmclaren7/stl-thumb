@@ -41,7 +41,7 @@ pub fn load<R: Read>(mut reader: R) -> Result<Mesh, Box<dyn Error>> {
 
     // Convert each shell once, even when an assembly places it several times.
     let mut shells = HashMap::new();
-    let mut ids: Vec<u64> = instances.iter().map(|(id, _)| *id).collect();
+    let mut ids: Vec<u64> = instances.iter().map(|i| i.shell.id).collect();
     ids.sort_unstable();
     ids.dedup();
     for id in ids {
@@ -60,10 +60,10 @@ pub fn load<R: Read>(mut reader: R) -> Result<Mesh, Box<dyn Error>> {
     // Base the tolerance on the size of the whole model, so small parts are not meshed more
     // finely than they will be drawn.
     let mut bounds = BoundingBox::<Point3<f64>>::new();
-    for (id, transform) in &instances {
-        if let Some(shell) = shells.get(id) {
+    for instance in &instances {
+        if let Some(shell) = shells.get(&instance.shell.id) {
             for v in &shell.vertices {
-                bounds.push(transform.transform_point(*v));
+                bounds.push(instance.transform.transform_point(*v));
             }
         }
     }
@@ -91,15 +91,16 @@ pub fn load<R: Read>(mut reader: R) -> Result<Mesh, Box<dyn Error>> {
     }
 
     let mut builder = MeshBuilder::new();
-    for (id, transform) in &instances {
-        if let Some(polygon) = meshes.get(id) {
-            add_polygon(&mut builder, polygon, transform);
+    for instance in &instances {
+        if let Some(polygon) = meshes.get(&instance.shell.id) {
+            add_polygon(&mut builder, polygon, instance);
         }
     }
     builder.finish("STEP")
 }
 
-fn add_polygon(builder: &mut MeshBuilder, polygon: &PolygonMesh, transform: &Matrix4<f64>) {
+fn add_polygon(builder: &mut MeshBuilder, polygon: &PolygonMesh, instance: &Instance) {
+    let transform = &instance.transform;
     let positions = polygon.positions();
     let normals = polygon.normals();
     let linear = Matrix3::from_cols(
@@ -107,9 +108,13 @@ fn add_polygon(builder: &mut MeshBuilder, polygon: &PolygonMesh, transform: &Mat
         transform.y.truncate(),
         transform.z.truncate(),
     );
-    let normal_matrix = linear.invert().map(|m| m.transpose()).unwrap_or(linear);
-    // A mirroring transform turns counter-clockwise triangles clockwise, so swap them back.
-    let order = if linear.determinant() < 0.0 {
+    let mut normal_matrix = linear.invert().map(|m| m.transpose()).unwrap_or(linear);
+    if instance.shell.reversed {
+        normal_matrix = -normal_matrix;
+    }
+    // A mirroring transform turns counter-clockwise triangles clockwise, and a reversed shell
+    // has them inside out, so swap them back.
+    let order = if (linear.determinant() < 0.0) != instance.shell.reversed {
         [0, 2, 1]
     } else {
         [0, 1, 2]
@@ -134,6 +139,19 @@ fn add_polygon(builder: &mut MeshBuilder, polygon: &PolygonMesh, transform: &Mat
     }
 }
 
+/// A shell as referenced from a solid or surface model, possibly with its faces reversed.
+#[derive(Clone, Copy)]
+struct ShellRef {
+    id: u64,
+    reversed: bool,
+}
+
+/// A shell placed in the model.
+struct Instance {
+    shell: ShellRef,
+    transform: Matrix4<f64>,
+}
+
 /// The parts of the STEP entity graph that say where each shell is placed.
 struct Assembly<'a> {
     entities: HashMap<u64, &'a EntityInstance>,
@@ -152,12 +170,12 @@ impl<'a> Assembly<'a> {
     }
 
     /// Every shell to draw, with the transform that places it in the model.
-    fn shell_instances(&self) -> Vec<(u64, Matrix4<f64>)> {
+    fn shell_instances(&self) -> Vec<Instance> {
         // Representations joined by a plain relationship share a coordinate system.
         // Relationships with a transformation, and mapped items, place a child inside a parent.
         let mut links: HashMap<u64, Vec<u64>> = HashMap::new();
         let mut children: HashMap<u64, Vec<(u64, Matrix4<f64>)>> = HashMap::new();
-        let mut shells: HashMap<u64, Vec<u64>> = HashMap::new();
+        let mut shells: HashMap<u64, Vec<ShellRef>> = HashMap::new();
         let mut is_child = HashSet::new();
         let mut known_shells = HashSet::new();
         let parents = self.assembly_parents();
@@ -206,31 +224,22 @@ impl<'a> Assembly<'a> {
                         continue;
                     };
                     match item_record.name.as_str() {
-                        "MANIFOLD_SOLID_BREP" | "FACETED_BREP" => {
+                        "MANIFOLD_SOLID_BREP" | "FACETED_BREP" | "BREP_WITH_VOIDS" => {
                             if let Some(shell) = reference(item_record, 1) {
+                                let shell = self.shell(shell, &mut known_shells);
                                 shells.entry(id).or_default().push(shell);
-                                known_shells.insert(shell);
                             }
-                        }
-                        "BREP_WITH_VOIDS" => {
-                            if let Some(shell) = reference(item_record, 1) {
-                                shells.entry(id).or_default().push(shell);
-                                known_shells.insert(shell);
-                            }
-                            // Voids are hidden inside the solid, so they are never drawn. They are
-                            // ORIENTED_CLOSED_SHELL(name, *, closed_shell, orientation).
-                            for void in references(item_record, 2) {
-                                known_shells.insert(void);
-                                if let Some(shell) = self.record(void).and_then(|r| reference(r, 2))
-                                {
-                                    known_shells.insert(shell);
+                            // Voids are hidden inside the solid, so they are never drawn.
+                            if item_record.name == "BREP_WITH_VOIDS" {
+                                for void in references(item_record, 2) {
+                                    self.shell(void, &mut known_shells);
                                 }
                             }
                         }
                         "SHELL_BASED_SURFACE_MODEL" => {
                             for shell in references(item_record, 1) {
+                                let shell = self.shell(shell, &mut known_shells);
                                 shells.entry(id).or_default().push(shell);
-                                known_shells.insert(shell);
                             }
                         }
                         "MAPPED_ITEM" => {
@@ -303,8 +312,45 @@ impl<'a> Assembly<'a> {
             .map(|(id, _)| *id)
             .collect();
         loose.sort_unstable();
-        instances.extend(loose.into_iter().map(|id| (id, Matrix4::identity())));
+        instances.extend(loose.into_iter().map(|id| Instance {
+            shell: ShellRef {
+                id,
+                reversed: false,
+            },
+            transform: Matrix4::identity(),
+        }));
         instances
+    }
+
+    /// Resolve a shell reference to the shell truck reads and whether it is reversed, marking
+    /// both as accounted for. ORIENTED_CLOSED_SHELL and ORIENTED_OPEN_SHELL are
+    /// (name, *, shell, orientation) wrappers, which truck keeps apart from its shells.
+    fn shell(&self, id: u64, known_shells: &mut HashSet<u64>) -> ShellRef {
+        known_shells.insert(id);
+        let Some(r) = self
+            .record(id)
+            .filter(|r| r.name == "ORIENTED_CLOSED_SHELL" || r.name == "ORIENTED_OPEN_SHELL")
+        else {
+            return ShellRef {
+                id,
+                reversed: false,
+            };
+        };
+        let Some(shell) = reference(r, 2) else {
+            return ShellRef {
+                id,
+                reversed: false,
+            };
+        };
+        known_shells.insert(shell);
+        let reversed = matches!(
+            arguments(r).get(3),
+            Some(Parameter::Enumeration(e)) if e.trim_matches('.') == "F"
+        );
+        ShellRef {
+            id: shell,
+            reversed,
+        }
     }
 
     /// Map each transformed representation relationship to the representation of the parent
@@ -460,7 +506,7 @@ struct Walk<'a> {
     groups: &'a [Vec<u64>],
     group_of: &'a HashMap<u64, usize>,
     children: &'a HashMap<u64, Vec<(u64, Matrix4<f64>)>>,
-    shells: &'a HashMap<u64, Vec<u64>>,
+    shells: &'a HashMap<u64, Vec<ShellRef>>,
 }
 
 impl Walk<'_> {
@@ -469,7 +515,7 @@ impl Walk<'_> {
         group: usize,
         transform: Matrix4<f64>,
         depth: usize,
-        instances: &mut Vec<(u64, Matrix4<f64>)>,
+        instances: &mut Vec<Instance>,
     ) {
         if depth > MAX_DEPTH {
             warn!("STEP assembly is nested too deeply or forms a cycle");
@@ -477,7 +523,7 @@ impl Walk<'_> {
         }
         for rep in &self.groups[group] {
             for &shell in self.shells.get(rep).into_iter().flatten() {
-                instances.push((shell, transform));
+                instances.push(Instance { shell, transform });
             }
             for (child, child_transform) in self.children.get(rep).into_iter().flatten() {
                 if let Some(&child_group) = self.group_of.get(child) {
