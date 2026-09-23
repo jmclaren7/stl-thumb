@@ -14,6 +14,10 @@ use self::stl_io::{Triangle, Vector};
 use self::ahash::AHashMap;
 use self::tobj::LoadOptions;
 
+#[cfg(feature = "step")]
+use crate::step;
+use crate::three_mf;
+
 #[derive(Copy, Clone)]
 pub struct Vertex {
     position: [f32; 3],
@@ -124,19 +128,21 @@ impl Mesh {
                     .and_then(std::ffi::OsStr::to_str)
                     .unwrap_or("")
                     .to_lowercase();
-                if !matches!(extension.as_str(), "obj" | "stl" | "3mf") {
+                if !matches!(extension.as_str(), "obj" | "stl" | "3mf" | "step" | "stp") {
                     return Err(format!(
-                        "Unsupported model format {:?}. Supported formats are STL, OBJ and 3MF",
+                        "Unsupported model format {:?}. Supported formats are STL, OBJ, 3MF and STEP",
                         extension
                     )
                     .into());
                 }
-                // No BufReader needed here: stl_io buffers internally and from_obj wraps the file itself
+                // No BufReader needed here: stl_io buffers internally, from_obj wraps the file itself
+                // and the 3MF and STEP loaders buffer or read the whole file themselves
                 let model_file = File::open(model_filename)?;
                 match extension.as_str() {
                     "obj" => Mesh::from_obj(model_file, recalc_normals),
                     "stl" => Mesh::from_stl(model_file, recalc_normals),
-                    _ => Mesh::from_3mf(model_file, recalc_normals),
+                    "3mf" => Mesh::from_3mf(model_file, recalc_normals),
+                    _ => Mesh::from_step(model_file, recalc_normals),
                 }
             }
         }
@@ -146,52 +152,23 @@ impl Mesh {
     where
         R: Read + Seek,
     {
-        let models = threemf::read(model_file)?;
+        three_mf::load(model_file)
+    }
 
-        let mut result = None;
+    #[cfg(feature = "step")]
+    pub fn from_step<R>(model_file: R, _recalc_normals: bool) -> Result<Mesh, Box<dyn Error>>
+    where
+        R: Read,
+    {
+        step::load(model_file)
+    }
 
-        let vertex_translator = |vertex: &threemf::model::Vertex| {
-            stl_io::Vertex::new([vertex.x as f32, vertex.y as f32, vertex.z as f32])
-        };
-
-        // Combine all the models into a single mesh.
-        for model in models {
-            for object in model.resources.object {
-                if let Some(mesh) = object.mesh {
-                    let vertex = |index: usize| {
-                        mesh.vertices
-                            .vertex
-                            .get(index)
-                            .map(vertex_translator)
-                            .ok_or("3MF triangle references a vertex that does not exist")
-                    };
-                    for triangle in &mesh.triangles.triangle {
-                        // Re-use `Mesh::process_tri`, which creates new vertices for every
-                        // triangle.
-                        // Possible optimization: re-use triangles instead.
-                        let triangle = stl_io::Triangle {
-                            normal: stl_io::Normal::new([1f32, 0f32, 0f32]),
-                            vertices: [
-                                vertex(triangle.v1)?,
-                                vertex(triangle.v2)?,
-                                vertex(triangle.v3)?,
-                            ],
-                        };
-                        result
-                            .get_or_insert_with(|| Mesh {
-                                vertices: Vec::new(),
-                                normals: Vec::new(),
-                                indices: Vec::new(),
-                                bounds: BoundingBox::new(&triangle.vertices[0]),
-                                model_had_normals: false,
-                            })
-                            .process_tri(&triangle, true);
-                    }
-                }
-            }
-        }
-
-        result.ok_or_else(|| "3MF file contains no triangles".into())
+    #[cfg(not(feature = "step"))]
+    pub fn from_step<R>(_model_file: R, _recalc_normals: bool) -> Result<Mesh, Box<dyn Error>>
+    where
+        R: Read,
+    {
+        Err("STEP support was not enabled when stl-thumb was built".into())
     }
 
     pub fn from_stl<R>(mut model_file: R, recalc_normals: bool) -> Result<Mesh, Box<dyn Error>>
@@ -352,6 +329,63 @@ impl Mesh {
     }
 }
 
+/// Collects triangles from the format loaders that build a mesh one triangle at a time.
+pub(crate) struct MeshBuilder {
+    mesh: Option<Mesh>,
+    triangles: usize,
+}
+
+impl MeshBuilder {
+    pub(crate) fn new() -> MeshBuilder {
+        MeshBuilder {
+            mesh: None,
+            triangles: 0,
+        }
+    }
+
+    /// Add a triangle whose vertices are in counter-clockwise order when seen from outside.
+    /// Normals are per vertex. They are calculated from the triangle when not given.
+    pub(crate) fn add_triangle(&mut self, vertices: [[f32; 3]; 3], normals: Option<[[f32; 3]; 3]>) {
+        let vertices = vertices.map(stl_io::Vertex::new);
+        let mesh = self.mesh.get_or_insert_with(|| Mesh {
+            vertices: Vec::new(),
+            normals: Vec::new(),
+            indices: Vec::new(),
+            bounds: BoundingBox::new(&vertices[0]),
+            model_had_normals: normals.is_some(),
+        });
+        for v in &vertices {
+            mesh.bounds.expand(v);
+            mesh.vertices.push(Vertex {
+                position: (*v).into(),
+            });
+        }
+        match normals {
+            Some(normals) => mesh.normals.extend(normals.map(|normal| Normal { normal })),
+            None => {
+                let n = normal(&Triangle {
+                    normal: Vector::new([0.0, 0.0, 0.0]),
+                    vertices,
+                });
+                mesh.normals.extend([n, n, n]);
+            }
+        }
+        self.triangles += 1;
+    }
+
+    /// Finish the mesh. `format` names the file format in log and error messages.
+    pub(crate) fn finish(self, format: &str) -> Result<Mesh, Box<dyn Error>> {
+        let mesh = self
+            .mesh
+            .ok_or_else(|| format!("{} file contains no triangles", format))?;
+        info!("Bounds:");
+        info!("{}", mesh.bounds);
+        info!("Center:\t{:?}", mesh.bounds.center());
+        info!("Triangles processed:\t{}\n", self.triangles);
+        Ok(mesh)
+    }
+}
+
 impl fmt::Display for Mesh {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Verts: {}", self.vertices.len())?;
@@ -377,5 +411,78 @@ fn normal(tri: &stl_io::Triangle) -> Normal {
     let mag = n.x.abs() + n.y.abs() + n.z.abs();
     Normal {
         normal: [n.x / mag, n.y / mag, n.z / mag],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cgmath::InnerSpace;
+
+    fn triangles(mesh: &Mesh) -> usize {
+        mesh.vertices.len() / 3
+    }
+
+    /// Enclosed volume, which is only positive when triangles wind counter-clockwise from outside.
+    fn signed_volume(mesh: &Mesh) -> f32 {
+        mesh.vertices
+            .chunks(3)
+            .map(|t| {
+                let [a, b, c] = [t[0], t[1], t[2]].map(|v| cgmath::Vector3::from(v.position));
+                a.dot(b.cross(c)) / 6.0
+            })
+            .sum()
+    }
+
+    fn assert_bounds(mesh: &Mesh, min: [f32; 3], max: [f32; 3]) {
+        let b = &mesh.bounds;
+        for (actual, expected) in [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z]
+            .iter()
+            .zip(min.iter().chain(max.iter()))
+        {
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "bounds {} do not match {:?} {:?}",
+                b,
+                min,
+                max
+            );
+        }
+    }
+
+    #[test]
+    fn threemf_components_and_transforms() {
+        let mesh = Mesh::load("test_data/components.3mf", false).unwrap();
+        assert_eq!(triangles(&mesh), 6 * 12);
+        assert_bounds(&mesh, [-3.0, 0.0, 0.0], [4.0, 6.0, 1.0]);
+        // A mirrored cube with the wrong winding would subtract its volume instead
+        assert!((signed_volume(&mesh) - 6.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn threemf_bambu_multi_file() {
+        let mesh = Mesh::load("test_data/nut_lever_bambu.3mf", false).unwrap();
+        assert_eq!(triangles(&mesh), 1672);
+        assert!(signed_volume(&mesh) > 0.0);
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn step_assembly() {
+        let mesh = Mesh::load("test_data/mount_assem1.step", false).unwrap();
+        assert!(triangles(&mesh) > 1000);
+        // The bounds of the assembled parts, which only match with the assembly transforms applied
+        assert_bounds(&mesh, [-50.0, -7.0, -46.711], [50.0, 25.174, 61.072]);
+        assert!(signed_volume(&mesh) > 0.0);
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn step_extension_stp() {
+        let dir = std::env::temp_dir().join("stl-thumb-test-stp");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mount.STP");
+        std::fs::copy("test_data/mount_assem1.step", &path).unwrap();
+        assert!(Mesh::load(path.to_str().unwrap(), false).is_ok());
     }
 }

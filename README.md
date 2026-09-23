@@ -4,9 +4,18 @@
 [![Documentation](https://img.shields.io/docsrs/stl-thumb/latest)](https://docs.rs/stl-thumb/latest/stl_thumb/)
 [![Crates.io](https://img.shields.io/crates/v/stl-thumb.svg)](https://crates.io/crates/stl-thumb)
 
-Stl-thumb is a fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF) files. It can show previews for model files in your file manager on Linux and Windows. It is written in Rust and uses OpenGL.
+Stl-thumb is a fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF, STEP) files. It can show previews for model files in your file manager on Linux and Windows. It is written in Rust and uses OpenGL.
 
 ![Screenshot](https://user-images.githubusercontent.com/3131268/116009182-f3f89c80-a5cc-11eb-817d-91e8a9fad279.png)
+
+## Supported formats
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| STL    | `.stl`     | ASCII and binary. |
+| OBJ    | `.obj`     | Materials and textures are ignored. |
+| 3MF    | `.3mf`     | Build items, components and transforms are applied, including multi-file projects from slicers such as Bambu Studio. Colors and materials are ignored. |
+| STEP   | `.step`, `.stp` | Tessellated with the pure-Rust [truck](https://github.com/ricosjp/truck) CAD kernel, and assemblies are placed. truck does not support every kind of STEP geometry yet, so some files may render incomplete or fail to load. |
 
 ## Installation
 
@@ -61,6 +70,10 @@ When you're done, build the release version with:
 ```
 $ cargo build --release
 ```
+STEP support is enabled by default. To build without it (and without the truck dependencies), use:
+```
+$ cargo build --release --no-default-features
+```
 ### Running the tests:
 The tests render with the OSMesa software renderer, so install it first (`libosmesa6-dev` on Debian/Ubuntu):
 ```
@@ -87,7 +100,7 @@ $ stl-thumb [OPTIONS] <MODEL_FILE> <IMG_FILE>
 
 | Option        | Description                                                                                                                                                                           |
 | ------------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <MODEL_FILE>    | The model file (STL, OBJ, or 3MF) you want a picture of. Use - to read an STL from stdin instead of a file.                                                                           |
+| <MODEL_FILE>    | The model file (STL, OBJ, 3MF or STEP) you want a picture of. Use - to read an STL from stdin instead of a file.                                                                      |
 | <IMG_FILE>    | The thumbnail image file that will be created. Use - to write to stdout instead of a file.                                                                                            |
 | -s, --size \<size\>   | Specify width of the image. It will always be a square. Defaults to 1024x768 when not given.                                                                                          |
 | -f, --format \<format\> | The format of the image file. If not specified it will be determined from the file extension, or default to PNG if there is no extension. Supported formats: PNG, JPEG, GIF, ICO, BMP |

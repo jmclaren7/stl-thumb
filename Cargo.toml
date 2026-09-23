@@ -2,12 +2,12 @@
 name = "stl-thumb"
 version = "0.5.0"
 authors = ["Tyler Anderson <unlimitedbacon@gmail.com>"]
-description = "A fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF) files"
+description = "A fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF, STEP) files"
 readme = "README.md"
 repository = "https://github.com/unlimitedbacon/stl-thumb"
 license = "MIT"
 homepage = "https://github.com/unlimitedbacon/stl-thumb"
-keywords = ["3d", "3dprinting", "stl", "obj", "3mf"]
+keywords = ["3d", "3dprinting", "stl", "3mf", "step"]
 categories = ["command-line-utilities", "graphics"]
 exclude = [
     "test_data/*"
@@ -31,9 +31,17 @@ glium = "0.32"
 image = "0.25.10"
 log = "0.4.29"
 stderrlog = "0.6.0"
+quick-xml = "0.39"
 stl_io = "0.11.0"
 tobj = "4.0.5"
-threemf = "0.8.0"
+truck-meshalgo = { version = "0.4", default-features = false, features = ["tessellation"], optional = true }
+truck-stepio = { version = "0.3", optional = true }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+
+[features]
+default = ["step"]
+# STEP (.step/.stp) support, using the pure-Rust truck CAD kernel to tessellate the model
+step = ["dep:truck-meshalgo", "dep:truck-stepio"]
 
 [dev-dependencies]
 criterion = "0.8"
@@ -57,7 +65,7 @@ license-file = ["LICENSE", "3"]
 depends = "libgl1, libc6, libgcc1, xvfb"
 recommends = "libosmesa6-dev"
 extended-description = """\
-Stl-thumb is a fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF) files. \
+Stl-thumb is a fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF, STEP) files. \
 It can show previews for 3D model files in your file manager on Linux and Windows. \
 It is written in Rust and uses OpenGL. """
 section = "graphics"
@@ -67,6 +75,7 @@ assets = [
     ["target/release/libstl_thumb.so",  "usr/lib/",                 "755"],
     ["target/release/libstl_thumb.a",   "usr/lib/",                 "644"],
     ["stl-thumb.thumbnailer",           "usr/share/thumbnailers/",  "644"],
+    ["obj-thumb.thumbnailer",           "usr/share/thumbnailers/",  "644"],
     ["stl-thumb-mime.xml",              "usr/share/mime/packages/", "644"],
     ["libstl_thumb.h",                  "usr/include/",             "644"],
     ["README.md",                       "usr/share/doc/stl-thumb/", "644"],
@@ -79,6 +88,7 @@ assets = [
     { source = "./target/release/libstl_thumb.a",   dest = "/usr/lib64/libstl_thumb.a",                         mode = "644" },
     { source = "libstl_thumb.h",                    dest = "/usr/include/libstl_thumb.h",                       mode = "644" },
     { source = "stl-thumb.thumbnailer",             dest = "/usr/share/thumbnailers/stl-thumb.thumbnailer",     mode = "644" },
+    { source = "obj-thumb.thumbnailer",             dest = "/usr/share/thumbnailers/obj-thumb.thumbnailer",     mode = "644" },
     { source = "stl-thumb-mime.xml",                dest = "/usr/share/mime/packages/stl-thumb-mime.xml",       mode = "644" },
     { source = "README.md",                         dest = "/usr/share/doc/stl-thumb/README.md",    doc = true, mode = "644" }
 ]

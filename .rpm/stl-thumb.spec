@@ -3,7 +3,7 @@
 %define debug_package %{nil}
 
 Name: stl-thumb
-Summary: A fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF) files
+Summary: A fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF, STEP) files
 Version: @@VERSION@@
 Release: @@RELEASE@@%{?dist}
 License: MIT
@@ -34,6 +34,7 @@ rm -rf %{buildroot}
 %{_libdir}/libstl_thumb.a
 %{_libdir}/libstl_thumb.so
 %{_datadir}/thumbnailers/stl-thumb.thumbnailer
+%{_datadir}/thumbnailers/obj-thumb.thumbnailer
 %{_datadir}/mime/packages/stl-thumb-mime.xml
 %{_datadir}/doc/stl-thumb/README.md
 
