@@ -38,6 +38,38 @@ jobs:
     - name: Run tests
       run: RUST_BACKTRACE=1 cargo test --verbose
 
+  build-windows:
+    name: Build and Test (Windows)
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-buildtest-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Run tests
+      # The runners have no GPU and only provide an OpenGL 1.1 software driver, so the rendering
+      # tests cannot create a context. Build all the tests but only run the ones that don't render.
+      env:
+        RUST_BACKTRACE: 1
+      run: cargo test --release --verbose --lib -- "config::"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: windows-x86_64-pc-windows-msvc
+        path: |
+          target/release/stl-thumb.exe
+          target/release/stl_thumb.dll
+          target/release/stl_thumb.dll.lib
+          target/release/stl_thumb.lib
+          libstl_thumb.h
+
   package:
     needs: [build]
     name: Package

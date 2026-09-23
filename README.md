@@ -1,7 +1,6 @@
 # stl-thumb
 
 [![Build Status](https://github.com/unlimitedbacon/stl-thumb/workflows/Build/badge.svg)](https://github.com/unlimitedbacon/stl-thumb/actions/workflows/build-ci.yml)
-[![Build Status](https://ci.appveyor.com/api/projects/status/exol1llladgo3f98/branch/master?svg=true)](https://ci.appveyor.com/project/unlimitedbacon/stl-thumb/branch/master)
 [![Documentation](https://img.shields.io/docsrs/stl-thumb/latest)](https://docs.rs/stl-thumb/latest/stl_thumb/)
 [![Crates.io](https://img.shields.io/crates/v/stl-thumb.svg)](https://crates.io/crates/stl-thumb)
 
