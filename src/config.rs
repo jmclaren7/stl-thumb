@@ -60,7 +60,7 @@ impl Config {
             .author(env!("CARGO_PKG_AUTHORS"))
             .arg(
                 clap::Arg::new("MODEL_FILE")
-                    .help("STL file. Use - to read from stdin instead of a file.")
+                    .help("3D model file (STL, OBJ, or 3MF). Use - to read an STL from stdin instead of a file.")
                     .required(true)
                     .index(1),
             )
@@ -75,21 +75,20 @@ impl Config {
                     .help("The format of the image file. If not specified it will be determined from the file extension, or default to PNG if there is no extension. Supported formats: PNG, JPEG, GIF, ICO, BMP")
                     .short('f')
                     .long("format")
-                    .action(clap::ArgAction::Set)
+                    .value_parser(parse_format)
             )
             .arg(
                 clap::Arg::new("size")
-                    .help("Size of thumbnail (square)")
+                    .help("Width and height of the thumbnail in pixels (it is always square). Defaults to 1024x768 when not given.")
                     .short('s')
                     .long("size")
-                    .action(clap::ArgAction::Set)
-                    .required(false)
+                    .value_parser(clap::value_parser!(u32).range(1..))
             )
             .arg(
                 clap::Arg::new("visible")
                     .help("Display the thumbnail in a window instead of saving a file")
                     .short('x')
-                    .required(false)
+                    .action(clap::ArgAction::SetTrue)
             )
             .arg(
                 clap::Arg::new("verbosity")
@@ -102,15 +101,16 @@ impl Config {
                     .help("Colors for rendering the mesh using the Phong reflection model. Requires 3 colors as rgb hex values: ambient, diffuse, and specular. Defaults to blue.")
                     .short('m')
                     .long("material")
-                    .value_names(["ambient","diffuse","specular"])
+                    .num_args(3)
+                    .value_names(["ambient", "diffuse", "specular"])
+                    .value_parser(parse_rgb)
             )
             .arg(
                 clap::Arg::new("background")
-                    .help("The background color with transparency (rgba). Default is ffffff00.")
+                    .help("The background color with transparency (rgba hex). Default is 00000000 (fully transparent).")
                     .short('b')
                     .long("background")
-                    .action(clap::ArgAction::Set)
-                    .required(false)
+                    .value_parser(parse_rgba)
             )
             .arg(
                 clap::Arg::new("aamethod")
@@ -123,6 +123,7 @@ impl Config {
                 clap::Arg::new("recalc_normals")
                     .help("Force recalculation of face normals. Use when dealing with malformed STL files.")
                     .long("recalc-normals")
+                    .action(clap::ArgAction::SetTrue)
             )
             .get_matches();
 
@@ -136,35 +137,32 @@ impl Config {
         c.img_filename = matches
             .remove_one::<String>("IMG_FILE")
             .expect("IMG_FILE not provided");
-        match matches.get_one::<String>("format") {
-            Some(x) => c.format = match_format(x),
+        match matches.get_one::<ImageFormat>("format") {
+            Some(x) => c.format = *x,
             None => {
                 if let Some(ext) = Path::new(&c.img_filename).extension() {
-                    c.format = match_format(ext.to_str().unwrap());
+                    c.format = match_format(&ext.to_string_lossy());
                 }
             }
         };
 
-        if let Some(x) = matches.get_one::<String>("size") {
-            c.width = x.parse::<u32>().expect("Invalid size");
+        if let Some(&size) = matches.get_one::<u32>("size") {
+            c.width = size;
+            c.height = size;
         }
 
-        if let Some(x) = matches.get_one::<String>("size") {
-            c.height = x.parse::<u32>().expect("Invalid size");
-        }
-
-        c.visible = matches.contains_id("visible");
+        c.visible = matches.get_flag("visible");
         c.verbosity = matches.get_count("verbosity") as usize;
-        if let Some(materials) = matches.get_many::<String>("material") {
-            let mut iter = materials.map(|m| html_to_rgb(m));
+        if let Some(mut colors) = matches.get_many::<[f32; 3]>("material") {
+            // clap guarantees exactly 3 values
             c.material = Material {
-                ambient: iter.next().unwrap_or([0.0, 0.0, 0.0]),
-                diffuse: iter.next().unwrap_or([0.0, 0.0, 0.0]),
-                specular: iter.next().unwrap_or([0.0, 0.0, 0.0]),
+                ambient: *colors.next().unwrap(),
+                diffuse: *colors.next().unwrap(),
+                specular: *colors.next().unwrap(),
             };
         }
-        if let Some(x) = matches.get_one::<String>("background") {
-            c.background = html_to_rgba(x);
+        if let Some(&x) = matches.get_one::<(f32, f32, f32, f32)>("background") {
+            c.background = x;
         }
         if let Some(x) = matches.get_one::<String>("aamethod") {
             match x.as_str() {
@@ -173,37 +171,82 @@ impl Config {
                 _ => unreachable!(),
             }
         }
-        c.recalc_normals = matches.contains_id("recalc_normals");
+        c.recalc_normals = matches.get_flag("recalc_normals");
 
         c
     }
 }
 
-fn match_format(ext: &str) -> ImageFormat {
+fn format_from_str(ext: &str) -> Option<ImageFormat> {
     match ext.to_lowercase().as_str() {
-        "png" => ImageFormat::Png,
-        "jpeg" | "jpg" => ImageFormat::Jpeg,
-        "gif" => ImageFormat::Gif,
-        "ico" => ImageFormat::Ico,
-        "bmp" => ImageFormat::Bmp,
-        _ => {
-            warn!("Unsupported image format. Using PNG instead.");
-            ImageFormat::Png
-        }
+        "png" => Some(ImageFormat::Png),
+        "jpeg" | "jpg" => Some(ImageFormat::Jpeg),
+        "gif" => Some(ImageFormat::Gif),
+        "ico" => Some(ImageFormat::Ico),
+        "bmp" => Some(ImageFormat::Bmp),
+        _ => None,
     }
 }
 
-fn html_to_rgb(color: &str) -> [f32; 3] {
-    let r: f32 = u8::from_str_radix(&color[0..2], 16).expect("Invalid color") as f32 / 255.0;
-    let g: f32 = u8::from_str_radix(&color[2..4], 16).expect("Invalid color") as f32 / 255.0;
-    let b: f32 = u8::from_str_radix(&color[4..6], 16).expect("Invalid color") as f32 / 255.0;
-    [r, g, b]
+fn match_format(ext: &str) -> ImageFormat {
+    format_from_str(ext).unwrap_or_else(|| {
+        warn!("Unsupported image format. Using PNG instead.");
+        ImageFormat::Png
+    })
 }
 
-fn html_to_rgba(color: &str) -> (f32, f32, f32, f32) {
-    let r: f32 = u8::from_str_radix(&color[0..2], 16).expect("Invalid color") as f32 / 255.0;
-    let g: f32 = u8::from_str_radix(&color[2..4], 16).expect("Invalid color") as f32 / 255.0;
-    let b: f32 = u8::from_str_radix(&color[4..6], 16).expect("Invalid color") as f32 / 255.0;
-    let a: f32 = u8::from_str_radix(&color[6..8], 16).expect("Invalid color") as f32 / 255.0;
-    (r, g, b, a)
+fn parse_format(format: &str) -> Result<ImageFormat, String> {
+    format_from_str(format)
+        .ok_or_else(|| "supported formats are PNG, JPEG, GIF, ICO and BMP".to_string())
+}
+
+/// Parse a hex color such as `ff8800` (or `#ff8800`) into `N` channels in the range 0.0-1.0.
+fn parse_hex_color<const N: usize>(color: &str) -> Result<[f32; N], String> {
+    let hex = color.strip_prefix('#').unwrap_or(color);
+    if hex.len() != N * 2 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("expected {} hex digits", N * 2));
+    }
+    let mut channels = [0.0; N];
+    for (i, channel) in channels.iter_mut().enumerate() {
+        let byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).map_err(|e| e.to_string())?;
+        *channel = byte as f32 / 255.0;
+    }
+    Ok(channels)
+}
+
+fn parse_rgb(color: &str) -> Result<[f32; 3], String> {
+    parse_hex_color(color)
+}
+
+fn parse_rgba(color: &str) -> Result<(f32, f32, f32, f32), String> {
+    let [r, g, b, a] = parse_hex_color(color)?;
+    Ok((r, g, b, a))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_hex_colors() {
+        assert_eq!(parse_rgb("ff0080"), Ok([1.0, 0.0, 128.0 / 255.0]));
+        assert_eq!(parse_rgb("#FF0080"), Ok([1.0, 0.0, 128.0 / 255.0]));
+        assert_eq!(parse_rgba("000000ff"), Ok((0.0, 0.0, 0.0, 1.0)));
+    }
+
+    #[test]
+    fn rejects_bad_hex_colors() {
+        assert!(parse_rgb("fff").is_err());
+        assert!(parse_rgb("ff00zz").is_err());
+        assert!(parse_rgb("+f+f+f").is_err());
+        assert!(parse_rgb("ff00ëë").is_err());
+        assert!(parse_rgba("ff0080").is_err());
+    }
+
+    #[test]
+    fn parses_formats() {
+        assert_eq!(parse_format("PNG"), Ok(ImageFormat::Png));
+        assert_eq!(parse_format("jpg"), Ok(ImageFormat::Jpeg));
+        assert!(parse_format("webp").is_err());
+    }
 }
