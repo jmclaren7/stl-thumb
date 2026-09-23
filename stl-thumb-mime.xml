@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <!--
-This is taken from shared-mime-info 1.10
-It is included for older systems which do not have a recent
-shared-mime-info package.
+The STL, OBJ and 3MF types are taken from shared-mime-info 2.4. They are included for older
+systems which do not have a recent shared-mime-info package.
+STEP is not in shared-mime-info yet, so model/step (the IANA registered type) is defined here.
 -->
 
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
   <mime-type type="model/stl">
-    <_comment>STL 3D model</_comment>
+    <comment>STL 3D model</comment>
     <acronym>STL</acronym>
     <expanded-acronym>StereoLithography</expanded-acronym>
     <magic priority="50">
@@ -19,11 +19,26 @@ shared-mime-info package.
     <alias type="model/x.stl-ascii"/>
     <alias type="model/x.stl-binary"/>
   </mime-type>
-  <mime-type type="application/prs.wavefront-obj">
+  <mime-type type="model/obj">
+    <comment>OBJ 3D model</comment>
     <sub-class-of type="text/plain"/>
-    <comment>Wavefront 3D Object file</comment>
-    <icon name="unknown"/>
-    <glob-deleteall/>
     <glob pattern="*.obj"/>
+  </mime-type>
+  <mime-type type="model/3mf">
+    <comment>3MF document</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.3mf"/>
+    <alias type="application/vnd.ms-3mfdocument"/>
+  </mime-type>
+  <mime-type type="model/step">
+    <comment>STEP 3D model</comment>
+    <acronym>STEP</acronym>
+    <expanded-acronym>Standard for the Exchange of Product model data</expanded-acronym>
+    <sub-class-of type="text/plain"/>
+    <magic priority="50">
+      <match type="string" value="ISO-10303-21;" offset="0"/>
+    </magic>
+    <glob pattern="*.step"/>
+    <glob pattern="*.stp"/>
   </mime-type>
 </mime-info>

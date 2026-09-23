@@ -60,7 +60,7 @@ impl Config {
             .author(env!("CARGO_PKG_AUTHORS"))
             .arg(
                 clap::Arg::new("MODEL_FILE")
-                    .help("3D model file (STL, OBJ, or 3MF). Use - to read an STL from stdin instead of a file.")
+                    .help("3D model file (STL, OBJ, 3MF or STEP). Use - to read an STL from stdin instead of a file.")
                     .required(true)
                     .index(1),
             )

@@ -8,6 +8,9 @@ extern crate log;
 pub mod config;
 mod fxaa;
 mod mesh;
+#[cfg(feature = "step")]
+mod step;
+mod three_mf;
 
 use cgmath::EuclideanSpace;
 use config::{AAMethod, Config};
@@ -630,5 +633,39 @@ mod tests {
         let size = fs::metadata(img_filename).expect("No file created").len();
 
         assert_ne!(0, size);
+    }
+
+    fn render_test_file(model_filename: &str, img_filename: &str) {
+        let config = Config {
+            model_filename: model_filename.to_string(),
+            img_filename: img_filename.to_string(),
+            format: image::ImageFormat::Png,
+            ..Default::default()
+        };
+
+        match fs::remove_file(img_filename) {
+            Ok(_) => (),
+            Err(ref error) if error.kind() == ErrorKind::NotFound => (),
+            Err(_) => {
+                panic!("Couldn't clean files before testing");
+            }
+        }
+
+        render_to_file(&config).expect("Error in render function");
+
+        let size = fs::metadata(img_filename).expect("No file created").len();
+
+        assert_ne!(0, size);
+    }
+
+    #[test]
+    fn components_3mf() {
+        render_test_file("test_data/components.3mf", "components-3mf.png");
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn assembly_step() {
+        render_test_file("test_data/mount_assem1.step", "assembly-step.png");
     }
 }
