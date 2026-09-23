@@ -19,7 +19,7 @@ The installer will tell the Windows shell to refresh the thumbnail cache, howeve
 
 ### Linux
 
-Stl-thumb works with Gnome and most other similar desktop environements. If you are using the KDE desktop environment then you will also need to install the seperate [`stl-thumb-kde`](https://github.com/unlimitedbacon/stl-thumb-kde) package.
+Stl-thumb works with Gnome and most other similar desktop environments. If you are using the KDE desktop environment then you will also need to install the separate [`stl-thumb-kde`](https://github.com/unlimitedbacon/stl-thumb-kde) package.
 
 Make sure that your file manager is set to generate previews for files larger than 1 MB. Most file managers have this setting under the Preview tab in their Preferences.
 
@@ -36,12 +36,12 @@ $ yay -S stl-thumb
 [Download the .deb package](https://github.com/unlimitedbacon/stl-thumb/releases/latest) for your platform (usually amd64) and install it. Packages are also available for armhf (Raspberry Pi) and arm64 (Pine64 and other SBCs).
 
 ```
-$ sudo apt install ./stl-thumb_0.4.0_amd64.deb
+$ sudo apt install ./stl-thumb_0.5.0_amd64.deb
 ```
 
 #### openSUSE
 
-For openSUSE Tumblweed there is a user repo available:
+For openSUSE Tumbleweed there is a user repo available:
 
 ```
 $ sudo zypper ar -f obs://home:jubalh:stl stl
@@ -52,15 +52,20 @@ $ sudo zypper install stl-thumb
 ## Building
 
 ### Building the tool itself:
-If you get errors about fontconfig being missing, install the development package
+If you get errors about fontconfig being missing, install the development package (`libfontconfig-dev` on Debian/Ubuntu).
 
 You can build the debug version with:
 ```
 $ cargo build
 ```
-When your done, build the realease version with:
+When you're done, build the release version with:
 ```
 $ cargo build --release
+```
+### Running the tests:
+The tests render with the OSMesa software renderer, so install it first (`libosmesa6-dev` on Debian/Ubuntu):
+```
+$ cargo test
 ```
 ### Building the .deb-package:
 ```
@@ -69,26 +74,26 @@ $ cargo deb
 ```
 ### Building the .rpm-package:
 ```
-$ cargo install generate-rpm #this is an additional dependency
+$ cargo install cargo-generate-rpm #this is an additional dependency
 $ cargo generate-rpm
 ```
 
 ## Command Line Usage
 
 ```
-$ stl-thumb <MODEL_FILE> [IMG_FILE]
+$ stl-thumb [OPTIONS] <MODEL_FILE> <IMG_FILE>
 ```
 
 ### Options
 
 | Option        | Description                                                                                                                                                                           |
 | ------------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <MODEL_FILE>    | The model file you want a picture of. Use - to read from stdin instead of a file.                                                                                                     |
+| <MODEL_FILE>    | The model file (STL, OBJ, or 3MF) you want a picture of. Use - to read an STL from stdin instead of a file.                                                                           |
 | <IMG_FILE>    | The thumbnail image file that will be created. Use - to write to stdout instead of a file.                                                                                            |
-| -s, --size \<size\>   | Specify width of the image. It will always be a square.                                                                                                                               |
+| -s, --size \<size\>   | Specify width of the image. It will always be a square. Defaults to 1024x768 when not given.                                                                                          |
 | -f, --format \<format\> | The format of the image file. If not specified it will be determined from the file extension, or default to PNG if there is no extension. Supported formats: PNG, JPEG, GIF, ICO, BMP |
 | -m, --material \<ambient\> \<diffuse\> \<specular\> | Colors for rendering the mesh using the Phong reflection model. Requires 3 colors as rgb hex values: ambient, diffuse, and specular. Defaults to blue.                                |
-| -b, --backround \<color> | The background color with transparency (rgba). Default is ffffff00.                                                                                                                   |
+| -b, --background \<color> | The background color with transparency (rgba). Default is 00000000 (fully transparent). JPEG has no transparency, so the rgb part is used as-is.                                     |
 | -a, --antialiasing [none, fxaa] | Anti-aliasing method. Default is FXAA, which is fast but may introduce artifacts.                                                                                                     |
 | --recalc-normals | Force recalculation of face normals. Use when dealing with malformed STL files.                                                                                                       |
 | -x            | Display the image in a window instead of saving a file.                                                                                                                               |

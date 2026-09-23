@@ -24,28 +24,19 @@ name = "stl-thumb"
 path = "src/main.rs"
 
 [dependencies]
-ahash = "0.8.11"
-cgmath = { version = "0.18.0", features = ["mint"] }
-clap = "4.5.8"
+ahash = "0.8.12"
+cgmath = "0.18.0"
+clap = "4.6"
 glium = "0.32"
-image = "0.25.1"
-libc = "0.2"
-log = "0.4.17"
-mint = "0.5.9"
+image = "0.25.10"
+log = "0.4.29"
 stderrlog = "0.6.0"
-stl_io = "0.8.0"
-tobj = "4.0.2"
-winit = "0.30.3"
-threemf = "0.6.0"
-
-#[patch.crates-io]
-#glutin = { git = "https://github.com/rust-windowing/glutin.git", rev = "07c461e" }
-
-[build-dependencies]
-cbindgen = "0.27.*"
+stl_io = "0.11.0"
+tobj = "4.0.5"
+threemf = "0.8.0"
 
 [dev-dependencies]
-criterion = "0.5.1"
+criterion = "0.8"
 
 [[bench]]
 name = "cube"
@@ -61,7 +52,10 @@ harness = false
 
 [package.metadata.deb]
 license-file = ["LICENSE", "3"]
-depends = "libgl1, libc6, libgcc1, libosmesa6-dev"
+# xvfb provides xvfb-run, which stl-thumb.thumbnailer uses. osmesa is only needed when rendering
+# without any X or Wayland server. osmesa-sys loads the unversioned libOSMesa.so from the -dev package.
+depends = "libgl1, libc6, libgcc1, xvfb"
+recommends = "libosmesa6-dev"
 extended-description = """\
 Stl-thumb is a fast lightweight thumbnail generator for 3D model(STL, OBJ, 3MF) files. \
 It can show previews for 3D model files in your file manager on Linux and Windows. \

@@ -119,22 +119,25 @@ impl Mesh {
             }
             _ => {
                 let model_filename = std::path::Path::new(model_filename);
-                // TODO: Try BufReader and see if it's faster
+                let extension = model_filename
+                    .extension()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .unwrap_or("")
+                    .to_lowercase();
+                if !matches!(extension.as_str(), "obj" | "stl" | "3mf") {
+                    return Err(format!(
+                        "Unsupported model format {:?}. Supported formats are STL, OBJ and 3MF",
+                        extension
+                    )
+                    .into());
+                }
+                // No BufReader needed here: stl_io buffers internally and from_obj wraps the file itself
                 let model_file = File::open(model_filename)?;
-                Ok(
-                    match model_filename
-                        .extension()
-                        .and_then(std::ffi::OsStr::to_str)
-                        .unwrap_or("")
-                        .to_lowercase()
-                        .as_str()
-                    {
-                        "obj" => Mesh::from_obj(model_file, recalc_normals)?,
-                        "stl" => Mesh::from_stl(model_file, recalc_normals)?,
-                        "3mf" => Mesh::from_3mf(model_file, recalc_normals)?,
-                        _ => unimplemented!("Format not supported"),
-                    },
-                )
+                match extension.as_str() {
+                    "obj" => Mesh::from_obj(model_file, recalc_normals),
+                    "stl" => Mesh::from_stl(model_file, recalc_normals),
+                    _ => Mesh::from_3mf(model_file, recalc_normals),
+                }
             }
         }
     }
@@ -155,6 +158,13 @@ impl Mesh {
         for model in models {
             for object in model.resources.object {
                 if let Some(mesh) = object.mesh {
+                    let vertex = |index: usize| {
+                        mesh.vertices
+                            .vertex
+                            .get(index)
+                            .map(vertex_translator)
+                            .ok_or("3MF triangle references a vertex that does not exist")
+                    };
                     for triangle in &mesh.triangles.triangle {
                         // Re-use `Mesh::process_tri`, which creates new vertices for every
                         // triangle.
@@ -162,9 +172,9 @@ impl Mesh {
                         let triangle = stl_io::Triangle {
                             normal: stl_io::Normal::new([1f32, 0f32, 0f32]),
                             vertices: [
-                                vertex_translator(&mesh.vertices.vertex[triangle.v1]),
-                                vertex_translator(&mesh.vertices.vertex[triangle.v2]),
-                                vertex_translator(&mesh.vertices.vertex[triangle.v3]),
+                                vertex(triangle.v1)?,
+                                vertex(triangle.v2)?,
+                                vertex(triangle.v3)?,
                             ],
                         };
                         result
@@ -181,7 +191,7 @@ impl Mesh {
             }
         }
 
-        Ok(result.unwrap())
+        result.ok_or_else(|| "3MF file contains no triangles".into())
     }
 
     pub fn from_stl<R>(mut model_file: R, recalc_normals: bool) -> Result<Mesh, Box<dyn Error>>
@@ -193,8 +203,7 @@ impl Mesh {
         let mut stl_iter = stl_io::create_stl_reader(&mut model_file)?;
 
         // Get starting point for finding bounding box
-        // TODO: Remove unwraps so lib can fail gracefully instead of panicing
-        let t1 = stl_iter.next().unwrap().unwrap();
+        let t1 = stl_iter.next().ok_or("STL file contains no triangles")??;
         let v1 = t1.vertices[0];
 
         let mut mesh = Mesh {

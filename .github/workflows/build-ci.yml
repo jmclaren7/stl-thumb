@@ -15,8 +15,8 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/cache@v3
+    - uses: actions/checkout@v7
+    - uses: actions/cache@v6
       with:
         path: |
           ~/.cargo/bin/
@@ -29,6 +29,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libosmesa6-dev
+    - name: Check formatting
+      run: cargo fmt --check
     - name: Build
       run: |
         cargo build --release --verbose
@@ -44,8 +46,8 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf, aarch64-unknown-linux-gnu]
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/cache@v3
+    - uses: actions/checkout@v7
+    - uses: actions/cache@v6
       with:
         path: |
           ~/.cargo/bin/
@@ -66,22 +68,30 @@ jobs:
       run: |
         if [ ${{ matrix.target }} == "armv7-unknown-linux-gnueabihf" ];
         then
-          export PKG_CONFIG_SYSROOT_DIR=/usr/arm-linux-gnueabihf
+          DEB_TRIPLE=arm-linux-gnueabihf
         elif [ ${{ matrix.target }} == "aarch64-unknown-linux-gnu" ];
         then
-          export PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu
+          DEB_TRIPLE=aarch64-linux-gnu
+        fi
+        if [ -n "$DEB_TRIPLE" ];
+        then
+          # Let pkg-config find the target's fontconfig and freetype when cross-compiling.
+          # These go to $GITHUB_ENV because an `export` would not reach the following steps.
+          TARGET_VAR=$(echo ${{ matrix.target }} | tr '-' '_')
+          echo "PKG_CONFIG_ALLOW_CROSS_${TARGET_VAR}=1" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH_${TARGET_VAR}=/usr/lib/${DEB_TRIPLE}/pkgconfig" >> "$GITHUB_ENV"
         fi
         rustup target add ${{ matrix.target }}
         cargo install cargo-deb --force
         cargo install cargo-generate-rpm --force
     - name: Package DEB
       run: |
-        cargo deb --target ${{ matrix.target }}
+        cargo deb --target ${{ matrix.target }} --output target/${{ matrix.target }}/debian/
     - name: Package RPM
       run: |
         cargo build --release
         cargo generate-rpm --target-dir ./target --target ${{ matrix.target }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: deb-rpm-${{ matrix.target }}
         path: |
