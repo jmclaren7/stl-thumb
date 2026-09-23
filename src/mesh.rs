@@ -476,6 +476,43 @@ mod tests {
         assert!(signed_volume(&mesh) > 0.0);
     }
 
+    /// Load the test assembly with one solid's shell wrapped in an ORIENTED_CLOSED_SHELL.
+    #[cfg(feature = "step")]
+    fn load_step_with_oriented_shell(orientation: &str) -> Mesh {
+        let original = std::fs::read_to_string("test_data/mount_assem1.step").unwrap();
+        let brep = "#1822 = MANIFOLD_SOLID_BREP ( 'Wrap2', #4484 ) ;";
+        assert!(original.contains(brep));
+        // Entity order does not matter, so the new shell can go right after the solid
+        let modified = original.replace(
+            brep,
+            &format!(
+                "#1822 = MANIFOLD_SOLID_BREP ( 'Wrap2', #99001 ) ;\n\
+                 #99001 = ORIENTED_CLOSED_SHELL ( 'NONE', *, #4484, .{}. ) ;",
+                orientation
+            ),
+        );
+        let dir = std::env::temp_dir().join(format!("stl-thumb-test-oriented-{}", orientation));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("oriented.step");
+        std::fs::write(&path, modified).unwrap();
+        Mesh::load(path.to_str().unwrap(), false).unwrap()
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn step_oriented_shell() {
+        let original = Mesh::load("test_data/mount_assem1.step", false).unwrap();
+        let forward = load_step_with_oriented_shell("T");
+        // The wrapped shell is still placed by the assembly, not drawn at the origin
+        assert_eq!(triangles(&forward), triangles(&original));
+        assert_bounds(&forward, [-50.0, -7.0, -46.711], [50.0, 25.174, 61.072]);
+        assert!((signed_volume(&forward) - signed_volume(&original)).abs() < 0.01);
+        // A reversed shell is turned inside out
+        let reversed = load_step_with_oriented_shell("F");
+        assert_eq!(triangles(&reversed), triangles(&original));
+        assert!(signed_volume(&reversed) < signed_volume(&original) - 1.0);
+    }
+
     #[cfg(feature = "step")]
     #[test]
     fn step_extension_stp() {
